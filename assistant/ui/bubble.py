@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPainter, QColor
 
 from assistant.config import BUBBLE_SIZE
@@ -7,34 +7,44 @@ from assistant.config import BUBBLE_SIZE
 
 class Bubble(QWidget):
 
+    double_clicked = Signal()
+
     def __init__(self):
         super().__init__()
 
         self.setWindowFlags(
-            Qt.FramelessWindowHint |
-            Qt.WindowStaysOnTopHint |
-            Qt.Tool
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint |
+            Qt.WindowType.Tool
         )
 
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.resize(BUBBLE_SIZE, BUBBLE_SIZE)
+
         self._drag = None
 
-    def paintEvent(self, e):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.setBrush(QColor("#4f8cff"))
-        p.setPen(Qt.NoPen)
-        p.drawEllipse(self.rect())
+    def paintEvent(self, event):
+        painter = QPainter(self)
 
-    def mousePressEvent(self, e):
-        if e.button() == Qt.LeftButton:
-            self._drag = e.globalPosition().toPoint() - self.pos()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-    def mouseMoveEvent(self, e):
+        painter.setBrush(QColor("#4f8cff"))
+        painter.setPen(Qt.PenStyle.NoPen)
+
+        painter.drawEllipse(self.rect())
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag = event.globalPosition().toPoint() - self.pos()
+
+    def mouseMoveEvent(self, event):
         if self._drag is not None:
-            self.move(e.globalPosition().toPoint() - self._drag)
+            self.move(event.globalPosition().toPoint() - self._drag)
 
-    def mouseReleaseEvent(self, e):
+    def mouseReleaseEvent(self, event):
         self._drag = None
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.double_clicked.emit()
