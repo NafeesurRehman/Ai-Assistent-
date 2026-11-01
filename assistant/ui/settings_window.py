@@ -159,13 +159,11 @@ class SettingsWindow(QWidget):
         }
 
         try:
-            # Configure Gemini
             configure_ai(
                 api_key=api_key,
                 model=data["model"]
             )
 
-            # Register hotkey before saving
             if self.hotkey_manager:
                 shortcut = (
                     data["hotkey"]
@@ -179,13 +177,11 @@ class SettingsWindow(QWidget):
                     )
                     return
 
-            # Windows startup
             if data["startup"]:
                 enable_startup()
             else:
                 disable_startup()
 
-            # Save settings (API key is NOT saved)
             with open(
                 self.settings_file,
                 "w",
@@ -193,7 +189,6 @@ class SettingsWindow(QWidget):
             ) as file:
                 json.dump(data, file, indent=4)
 
-            # Apply theme
             self.chat.apply_theme(data["theme"])
 
             self.status.setText(
