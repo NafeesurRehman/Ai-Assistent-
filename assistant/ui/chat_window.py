@@ -1,275 +1,154 @@
-
+import sys
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout,
-    QTextEdit, QLineEdit, QPushButton, QLabel
+    QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, 
+    QLineEdit, QPushButton, QLabel, QScrollArea, QFrame
 )
 
-from assistant.chat_history import ChatHistory
-from assistant.ui.history_panel import HistoryPanel
-from assistant.ui.workers import AIWorker
+class MessageBubble(QFrame):
+    """Custom widget for message bubbles (User right, AI left)"""
+    def __init__(self, text, is_user=True):
+        super().__init__()
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
 
+        lbl = QLabel(text)
+        lbl.setWordWrap(True)
+        lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        
+        # Style based on sender
+        if is_user:
+            lbl.setStyleSheet("""
+                background-color: #0078D4;
+                color: white;
+                padding: 8px 12px;
+                border-radius: 12px;
+                font-size: 13px;
+            """)
+            layout.addStretch()
+            layout.addWidget(lbl)
+        else:
+            lbl.setStyleSheet("""
+                background-color: #2D2D2D;
+                color: #E0E0E0;
+                padding: 8px 12px;
+                border-radius: 12px;
+                font-size: 13px;
+            """)
+            layout.addWidget(lbl)
+            layout.addStretch()
 
 class ChatWindow(QWidget):
-
     def __init__(self):
         super().__init__()
-
         self.setWindowTitle("AI Assistant")
-        self.resize(420, 600)
+        self.resize(380, 520)
+        self.setStyleSheet("background-color: #1E1E1E;")
 
-        self.history = ChatHistory()
-        self.history_panel = None
-        self.worker = None
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(10, 10, 10, 10)
 
-        self.setStyleSheet("""
-            QWidget {
-                background-color: #111827;
-                color: white;
-                font-size: 14px;
-            }
-
-            QTextEdit {
-                background-color: #1f2937;
-                border: 1px solid #374151;
-                border-radius: 10px;
-                padding: 10px;
-            }
-
-            QLineEdit {
-                background-color: #1f2937;
-                border: 1px solid #4f8cff;
-                border-radius: 10px;
-                padding: 12px;
-            }
-
+        # Header area with Clear Chat Button
+        header_layout = QHBoxLayout()
+        title_lbl = QLabel("AI Assistant")
+        title_lbl.setStyleSheet("color: white; font-weight: bold; font-size: 14px;")
+        
+        self.clear_btn = QPushButton("🗑️ Clear")
+        self.clear_btn.setStyleSheet("""
             QPushButton {
-                background-color: #4f8cff;
+                background-color: transparent;
+                color: #888888;
                 border: none;
-                border-radius: 10px;
-                padding: 10px;
-                font-weight: bold;
-                color: white;
+                font-size: 12px;
             }
-
             QPushButton:hover {
-                background-color: #2563eb;
+                color: #FF5555;
             }
         """)
+        self.clear_btn.clicked.connect(self.clear_chat)
 
-        layout = QVBoxLayout(self)
+        header_layout.addWidget(title_lbl)
+        header_layout.addStretch()
+        header_layout.addWidget(self.clear_btn)
+        main_layout.addLayout(header_layout)
 
-        title = QLabel("AI Assistant")
-        title.setStyleSheet(
-            "font-size: 22px; font-weight: bold; padding: 10px;"
+        # Scroll Area for Messages
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setStyleSheet("border: none; background-color: transparent;")
+
+        self.container = QWidget()
+        self.chat_layout = QVBoxLayout(self.container)
+        self.chat_layout.setAlignment(Qt.AlignTop)
+        self.scroll_area.setWidget(self.container)
+        
+        main_layout.addWidget(self.scroll_area)
+
+        # Typing Indicator
+        self.typing_label = QLabel("AI is typing...")
+        self.typing_label.setStyleSheet("color: #888888; font-size: 11px; font-style: italic;")
+        self.typing_label.hide()
+        main_layout.addWidget(self.typing_label)
+
+        # Input Area
+        input_layout = QHBoxLayout()
+        self.input_field = QLineEdit()
+        self.input_field.setPlaceholderText("Type a message...")
+        self.input_field.setStyleSheet("""
+            QLineEdit {
+                background-color: #2D2D2D;
+                color: white;
+                border: 1px solid #3C3C3C;
+                border-radius: 6px;
+                padding: 6px 10px;
+            }
+        """)
+        self.input_field.returnPressed.connect(self.send_message)
+
+        self.send_btn = QPushButton("Send")
+        self.send_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0078D4;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 6px 12px;
+            }
+            QPushButton:hover {
+                background-color: #106EBE;
+            }
+        """)
+        self.send_btn.clicked.connect(self.send_message)
+
+        input_layout.addWidget(self.input_field)
+        input_layout.addWidget(self.send_btn)
+        main_layout.addLayout(input_layout)
+
+    def add_message(self, text, is_user=True):
+        bubble = MessageBubble(text, is_user)
+        self.chat_layout.addWidget(bubble)
+        # Scroll to bottom
+        self.scroll_area.verticalScrollBar().setValue(
+            self.scroll_area.verticalScrollBar().maximum()
         )
-
-        top_layout = QHBoxLayout()
-
-        self.new_chat_button = QPushButton("New Chat")
-        self.history_button = QPushButton("History")
-
-        top_layout.addWidget(self.new_chat_button)
-        top_layout.addWidget(self.history_button)
-
-        self.chat_area = QTextEdit()
-        self.chat_area.setReadOnly(True)
-
-        self.input_box = QLineEdit()
-        self.input_box.setPlaceholderText("Type your message...")
-
-        self.send_button = QPushButton("Send")
-
-        bottom_layout = QHBoxLayout()
-        bottom_layout.addWidget(self.input_box)
-        bottom_layout.addWidget(self.send_button)
-
-        layout.addWidget(title)
-        layout.addLayout(top_layout)
-        layout.addWidget(self.chat_area)
-        layout.addLayout(bottom_layout)
-
-        self.send_button.clicked.connect(self.send_message)
-        self.input_box.returnPressed.connect(self.send_message)
-
-        self.new_chat_button.clicked.connect(self.new_chat)
-        self.history_button.clicked.connect(self.show_history)
-
-        self.load_current_chat()
-
-    def load_current_chat(self):
-
-        self.chat_area.clear()
-
-        for item in self.history.get_messages():
-            role = "You" if item["role"] == "user" else "AI"
-
-            self.chat_area.append(
-                role + ": " + item["content"]
-            )
-
-    def new_chat(self):
-
-        if self.worker and self.worker.isRunning():
-            return
-
-        self.history.new_chat()
-
-        self.chat_area.clear()
-        self.input_box.clear()
-
-    def show_history(self):
-
-        if self.history_panel is None:
-
-            self.history_panel = HistoryPanel(self.history)
-
-            self.history_panel.conversation_selected.connect(
-                self.open_conversation
-            )
-
-            self.history_panel.conversation_deleted.connect(
-                self.on_conversation_deleted
-            )
-
-        self.history_panel.refresh_history()
-        self.history_panel.show()
-        self.history_panel.activateWindow()
-        self.history_panel.raise_()
-
-    def open_conversation(self, chat_id):
-
-        if self.worker and self.worker.isRunning():
-            return
-
-        if self.history.open_chat(chat_id):
-
-            self.load_current_chat()
-
-            self.show()
-            self.activateWindow()
-            self.raise_()
-
-    def on_conversation_deleted(self, chat_id):
-
-        if self.history.current_chat_id is None:
-            self.chat_area.clear()
 
     def send_message(self):
+        text = self.input_field.text().strip()
+        if text:
+            self.add_message(text, is_user=True)
+            self.input_field.clear()
+            # Demo typing indicator
+            self.show_typing(True)
 
-        message = self.input_box.text().strip()
-
-        if not message:
-            return
-
-        if self.worker and self.worker.isRunning():
-            return
-
-        self.chat_area.append("You: " + message)
-
-        self.history.add_message("user", message)
-
-        self.input_box.clear()
-
-        self.send_button.setEnabled(False)
-
-        self.chat_area.append("AI: Thinking...")
-
-        self.worker = AIWorker(message)
-
-        self.worker.finished_response.connect(
-            self.show_response
-        )
-
-        self.worker.error_occurred.connect(
-            self.show_error
-        )
-
-        self.worker.start()
-
-    def show_response(self, response):
-
-        self.replace_thinking(response)
-
-        self.history.add_message("assistant", response)
-
-        self.send_button.setEnabled(True)
-
-        if self.history_panel is not None:
-            self.history_panel.refresh_history()
-
-    def show_error(self, error):
-
-        self.replace_thinking("Error: " + error)
-
-        self.history.add_message(
-            "assistant",
-            "Error: " + error
-        )
-
-        self.send_button.setEnabled(True)
-
-    def replace_thinking(self, response):
-
-        cursor = self.chat_area.textCursor()
-
-        cursor.movePosition(cursor.MoveOperation.End)
-
-        cursor.select(
-            cursor.SelectionType.BlockUnderCursor
-        )
-
-        cursor.removeSelectedText()
-
-        cursor.insertText("AI: " + response)
-
-        self.chat_area.append("")
-
-    def apply_theme(self, theme):
-
-        if theme == "Light":
-
-            self.setStyleSheet("""
-                QWidget {
-                    background-color: #f3f4f6;
-                    color: #111827;
-                }
-
-                QTextEdit, QLineEdit {
-                    background-color: white;
-                    color: #111827;
-                    border: 1px solid #9ca3af;
-                    border-radius: 10px;
-                    padding: 10px;
-                }
-
-                QPushButton {
-                    background-color: #2563eb;
-                    color: white;
-                    padding: 12px;
-                    border-radius: 10px;
-                }
-            """)
-
+    def show_typing(self, show=True):
+        if show:
+            self.typing_label.show()
         else:
+            self.typing_label.hide()
 
-            self.setStyleSheet("""
-                QWidget {
-                    background-color: #111827;
-                    color: white;
-                }
-
-                QTextEdit, QLineEdit {
-                    background-color: #1f2937;
-                    color: white;
-                    border: 1px solid #374151;
-                    border-radius: 10px;
-                    padding: 10px;
-                }
-
-                QPushButton {
-                    background-color: #4f8cff;
-                    color: white;
-                    padding: 12px;
-                    border-radius: 10px;
-                }
-            """)
+    def clear_chat(self):
+        while self.chat_layout.count():
+            item = self.chat_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
